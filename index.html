@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Beach House – Book now</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#f7f9fc;color:#222}
+  header{background:#006994;color:#fff;padding:1.2rem 1rem;text-align:center}
+  #cal-wrap{max-width:320px;margin:2rem auto;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);padding:1rem}
+  .calendar th,.calendar td{width:14.28%;text-align:center;padding:.4rem 0}
+  .calendar td{cursor:pointer;border-radius:4px}
+  .available:hover{background:#d1f3d1}
+  .blocked{background:#ffb8b8;color:#700;cursor:not-allowed}
+  .selected{background:#28a745;color:#fff;font-weight:bold}
+  #form{margin-top:1rem}
+  input,button{width:100%;padding:.6rem;margin:.3rem 0;font-size:1rem;border:1px solid #bbb;border-radius:4px}
+  button{background:#006994;color:#fff;border:none;cursor:pointer}
+  button:disabled{background:#888;cursor:not-allowed}
+  .error{color:#c00;font-size:.9rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>Beach House Booking</h1>
+  <p>Pick your dates below.&nbsp;&nbsp;Already taken dates are red.</p>
+</header>
+
+<div id="cal-wrap">
+  <div id="cal-nav" style="display:flex;justify-content:space-between;padding:.2rem 0">
+    <button id="prev">‹</button>
+    <span id="monthLabel"></span>
+    <button id="next">›</button>
+  </div>
+  <table class="calendar" cellspacing="0">
+    <thead><tr><th>Sun<th>Mon<th>Tue<th>Wed<th>Thu<th>Fri<th>Sat</tr></thead>
+    <tbody id="cal-body"></tbody>
+  </table>
+
+  <form id="form">
+    <input id="name" placeholder="Your name" required />
+    <input id="note" placeholder="Optional note (kids, dogs, …)" />
+    <input id="pw"   placeholder="Booking passphrase" required />
+    <button id="submitBtn">Request booking</button>
+    <div class="error" id="msg"></div>
+  </form>
+</div>
+
+<script>
+/************** CONFIG **************/
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwcCTwzvNcYYxO42Ceyf90Z5KZD0Dit-dd9Q5XoM1Fgw97BgEvKUHWriel-ODyXCkIUQg/exec; // <— change
+const MIN_STAY    = 2;        // nights
+const TIMEZONE    = 'South_Africa/Johannesburg';
+/************** /CONFIG *************/
+
+let bookings = [], selStart = null, selEnd = null, currentMonth = new Date();
+
+async function fetchBookings(){
+  const r = await fetch(BACKEND_URL+'?action=getBookings');
+  bookings = await r.json();
+  renderCalendar();
+}
+function ymd(d){return d.toISOString().slice(0,10);}
+function parseYMD(s){return new Date(s+'T00:00:00');}
+function inRange(dt){
+  return bookings.some(b=>{
+    const a=parseYMD(b.start), z=parseYMD(b.end);
+    return dt>=a && dt<z;
+  });
+}
+function renderCalendar(){
+  const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
+  const first = new Date(y,m,1), last=new Date(y,m+1,0);
+  const startSun = new Date(first); startSun.setDate(first.getDate()-first.getDay());
+  const tbl=document.getElementById('cal-body'); tbl.innerHTML='';
+  let row=document.createElement('tr');
+  for(let i=0;i<42;i++){
+    const cell=new Date(startSun); cell.setDate(startSun.getDate()+i);
+    const td=document.createElement('td');
+    td.textContent=cell.getDate();
+    td.dataset.ymd=ymd(cell);
+    if(cell.getMonth()!==m) td.style.opacity='.3';
+    else if(inRange(cell)){ td.classList.add('blocked'); }
+    else { td.classList.add('available'); td.onclick=clickDate; }
+    if(selStart && cell>=selStart && (selEnd?cell<selEnd:cell>=selStart)) td.classList.add('selected');
+    row.appendChild(td);
+    if(i%7===6){ tbl.appendChild(row); row=document.createElement('tr'); }
+  }
+  document.getElementById('monthLabel').textContent=first.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+}
+function clickDate(e){
+  const dt=new Date(e.target.dataset.ymd);
+  if(selStart && (!selEnd || dt<selStart)){
+    selStart=dt; selEnd=null;
+  }else if(!selStart || dt<selStart){
+    selStart=dt; selEnd=null;
+  }else{
+    selEnd=new Date(dt); selEnd.setDate(dt.getDate()+1);
+    const nights=(selEnd-selStart)/864e5;
+    if(nights<MIN_STAY){msg(`Minimum stay is ${MIN_STAY} nights`); selEnd=null; }
+  }
+  renderCalendar();
+}
+function msg(s){document.getElementById('msg').textContent=s;}
+document.getElementById('prev').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()-1); renderCalendar();};
+document.getElementById('next').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()+1); renderCalendar();};
+document.getElementById('form').onsubmit=async(e)=>{
+  e.preventDefault();
+  if(!selStart || !selEnd){msg('Choose check-in and check-out first'); return;}
+  const payload={
+    action:'addBooking',
+    start:ymd(selStart),
+    end:ymd(selEnd),
+    name:document.getElementById('name').value.trim(),
+    note:document.getElementById('note').value.trim(),
+    pw:document.getElementById('pw').value.trim()
+  };
+  document.getElementById('submitBtn').disabled=true;
+  const r=await fetch(BACKEND_URL,{method:'POST',body:JSON.stringify(payload)});
+  const j=await r.json();
+  if(j.ok){ alert('Request sent! We’ll confirm by e-mail.'); location.reload(); }
+  else { msg(j.error||'Server error'); document.getElementById('submitBtn').disabled=false; }
+};
+fetchBookings();
+</script>
+</body>
+</html>
