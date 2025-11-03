@@ -18,6 +18,7 @@
   button{background:#006994;color:#fff;border:none;cursor:pointer}
   button:disabled{background:#888;cursor:not-allowed}
   .error{color:#c00;font-size:.9rem}
+  #range{text-align:center;margin:.5rem 0;font-weight:bold}
 </style>
 </head>
 <body>
@@ -37,6 +38,9 @@
     <tbody id="cal-body"></tbody>
   </table>
 
+  <!-- NEW: shows the range you picked -->
+  <div id="range"></div>
+
   <form id="form">
     <input id="name" placeholder="Your name" required />
     <input id="note" placeholder="Optional note (kids, dogs, …)" />
@@ -48,7 +52,7 @@
 
 <script>
 /************** CONFIG **************/
-const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwcCTwzvNcYYxO42Ceyf90Z5KZD0Dit-dd9Q5XoM1Fgw97BgEvKUHWriel-ODyXCkIUQg/exec'; // <— change
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwcCTwzvNcYYxO42Ceyf90Z5KZD0Dit-dd9Q5XoM1Fgw97BgEvKUHWriel-ODyXCkIUQg/exec';
 const MIN_STAY    = 2;        // nights
 const TIMEZONE    = 'Africa/Johannesburg';
 /************** /CONFIG *************/
@@ -82,11 +86,20 @@ function renderCalendar(){
     if(cell.getMonth()!==m) td.style.opacity='.3';
     else if(inRange(cell)){ td.classList.add('blocked'); }
     else { td.classList.add('available'); td.onclick=clickDate; }
-    if(selStart && cell>=selStart && (selEnd?cell<selEnd:cell>=selStart)) td.classList.add('selected');
+    /*  FIXED PAINT RULE  */
+    if(selStart && cell>=selStart && (!selEnd || cell<=selEnd)) td.classList.add('selected');
     row.appendChild(td);
     if(i%7===6){ tbl.appendChild(row); row=document.createElement('tr'); }
   }
   document.getElementById('monthLabel').textContent=first.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+
+  /*  SHOW RANGE  */
+  const range=document.getElementById('range');
+  if(selStart){
+    let txt=`${selStart.toLocaleDateString()}`;
+    if(selEnd) txt+=`  –  ${selEnd.toLocaleDateString()}  (${((selEnd-selStart)/864e5)+1} nights)`;
+    range.textContent=txt;
+  }else range.textContent='';
 }
 function clickDate(e){
   const dt=new Date(e.target.dataset.ymd);
@@ -95,8 +108,9 @@ function clickDate(e){
   }else if(!selStart || dt<selStart){
     selStart=dt; selEnd=null;
   }else{
-    selEnd=new Date(dt); selEnd.setDate(dt.getDate()+1);
-    const nights=(selEnd-selStart)/864e5;
+    /*  FIXED: inclusive checkout night  */
+    selEnd=new Date(dt);
+    const nights=(selEnd-selStart)/864e5 + 1;
     if(nights<MIN_STAY){msg(`Minimum stay is ${MIN_STAY} nights`); selEnd=null; }
   }
   renderCalendar();
@@ -110,7 +124,7 @@ document.getElementById('form').onsubmit=async(e)=>{
   const payload={
     action:'addBooking',
     start:ymd(selStart),
-    end:ymd(selEnd),
+    end:ymd(new Date(selEnd.getTime()+864e5)), // store checkout morning
     name:document.getElementById('name').value.trim(),
     note:document.getElementById('note').value.trim(),
     pw:document.getElementById('pw').value.trim()
